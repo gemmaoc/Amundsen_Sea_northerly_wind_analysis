@@ -1,0 +1,8 @@
+# Ignore Data directory
+Data/
+
+# macOS system files
+.DS_Store
+
+# VS Code workspace settings
+.vscode/settings.json
