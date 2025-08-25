@@ -70,11 +70,11 @@ def get_proxy_trends(recon, region_bounds):
 #%%
 def main():
     # ---- USER INPUT ----
-    # variable = input(f"Select variable {list(var_map.keys())}: ").strip()
-    variable = "u"
-    # region_name = input(f"Select region {list(regions.keys())}: ").strip()
+    variable = input(f"Select variable {list(var_map.keys())}: ").strip()
+    # variable = "u"
+    region_name = input(f"Select region {list(regions.keys())}: ").strip()
     # region_name = "Amundsen_Sea" #for on-shelf
-    region_name = 'ASE_shelf_break'  
+    # region_name = 'ASE_shelf_break'  
     region_bounds = regions[region_name]
     # --------------------
 
@@ -111,32 +111,37 @@ def main():
 
     proxy_colors = {name: grayscale[i] for i, name in enumerate(recons)}
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(8, 6))
 
     # Plot proxy trends
     # Plot proxy values, each with its own legend entry
     for recon, trend in proxy_trends.items():
         print(recon, trend, proxy_colors[recon])
         plt.scatter(["Historical"], [trend], 
-                color=proxy_colors[recon], label=recon+' recon', 
+                color=proxy_colors[recon], label=recon+' reconstruction', 
                 s=150, edgecolor="k", zorder=4, linewidths=2)
 
     for scen_key, members in all_data.items():
         mean_val = ens_mean_trends[scen_key].item()
         # Plot ensemble mean as solid color scatter
         plt.scatter([scen_key], [mean_val], color=model_colors[scen_key], 
-                    s=150, label=f"{scen_key} model mean", edgecolor='k', zorder=3,
+                    s=150, label=f"{scen_key} simulations", edgecolor='k', zorder=4,
                     linewidths=2)
         # Plot other ensemble members as shaded scatter
         other_members = members.values
         plt.scatter([scen_key]*len(other_members), other_members, 
-                    color=model_colors[scen_key], alpha=0.5, s=150, zorder=2)
+                    color=model_colors[scen_key], alpha=0.5, s=150, zorder=3)
 
     
     
     plt.ylabel(f"{var_map[variable].replace('_', ' ').title()} Trend (m/s per century)")
     plt.title(f"Ensemble Trends for {region_name} - {var_map[variable].replace('_', ' ').title()}")
     plt.grid(True, axis='y')
+    plt.axhline(0, color='k', linestyle='--', linewidth=2,zorder=2)
+    plt.rcParams.update({'font.size': 14,
+                         'legend.fontsize': 9,
+                         'axes.titlesize': 14,
+                         'axes.labelsize': 14})
     plt.tight_layout()
 
     # Only show one mean label per scenario
