@@ -6,135 +6,173 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import numpy as np
 
-#%% USER SETTINGS
-base_dir = "/Users/gemma/Documents/Data/Model/Ocean/Naughten_2023/"
+#%% USER SETTINGS------------------------------------------------------
+
+vname = 'vs'  # variable name: 'vs' for northward wind, 'us' for eastward wind, 'tas' for temperature
+region = 'Amundsen_Sea_shelf'
+
+
+#%% Define data directories and regions--------------------------------------
+
+base_dir = "/glade/campaign/univ/uwas0134/Gemma/Data/"
 
 regions = {
-    "Amundsen_Sea": [-115, -100, -76, -70], 
-    "ASE_shelf_break": [-115, -102, -72, -70],  # Amundsen Sea shelf break
-}
-var_map = {
-    "temp": "temperature",
-    "u": "eastward_wind",
-    "v": "northward_wind"
+    "Amundsen_Sea_shelf": [-115, -100, -76, -70], 
+    "ASE_shelf_break": [-115, -102, -72, -70], 
 }
 
 
-#%%
-def load_model_ens(scenario_dir, variable, region_bounds):
+#%% define func to get ensemble trends for a single variable and single simulation------------------------------------
+
+def load_sim_ensemble(sim, variable, region_bounds):
     """
-    Load all ensemble members for a variable and average over region.
+    Load ensemble climate variable timeseries and trends for a single simulation.
+    
+    Parameters:
+    sim (str): Simulation name (e.g., 'CESM2_LENS').
+    variable (str): Variable name (e.g., 'V').
+    region_bounds (list): List of [lon1, lon2, lat1, lat2] defining the region.
+
     Returns:
-        members: xarray DataArray of shape (n_members,)
-        ens_mean: float, ensemble mean trend
+    ensemble_tseries (xr data array): Array of annual mean timeseries for each ensemble member.
+    ensemble_trends (np.array): Array of annunal-mean trends for each ensemble member.
+    ensemble_pvales (np.array): Array of p-values for each ensemble member's trend
     """
 
-    print(os.getcwd())
-    fname = [f for f in os.listdir(scenario_dir) if var_map[variable] in f][0]
-    ds = xr.open_dataset(os.path.join(scenario_dir, fname))
+    sim_dict = {'CESM2_SSP370': 'CESM2_SSP370/',
+                    'CESM2_SSP245': 'CESM2_SSP245/',
+                    'CESM2_SSP585': 'CESM2_SSP585/'}
+    # var_map shows variable directory and variable name in netCDF file
+    var_map = {
+                "tas": ["TS",'TS'],
+                "us": ["U", 'u1000'],
+                "vs": ["V", 'v1000']
+            }
+    sim_dir = base_dir + 'Model/' + sim_dict[sim] + var_map[variable][0] + "/"
+    print(sim_dir)
 
-    # Clip to region
-    lon1, lon2, lat1, lat2 = region_bounds
-    ds_region = ds.sel(X=slice(lon1, lon2), Y=slice(lat1, lat2))
+    # Get all .nc files in the directory
+    nc_files = [f for f in os.listdir(sim_dir) if f.endswith('.nc') and var_map[variable][1] in f]
+    print(f"Found {len(nc_files)} ensemble files for simulation {sim} and variable {variable}.")
 
-    # mask large values (placeholders for Nans where boundaries are)
-    ds_region_masked = ds_region.where(ds_region[var_map[variable]] < 1e35)
-    # Average spatially over region (shape (10 members))
-    members = ds_region_masked[var_map[variable]].mean(dim=["X", "Y"], skipna=True)
+    # Load all files and collect variable data
 
-    # calculate ensemble mean trend
-    ens_mean = members.mean()
+    # get number of years from first file name (fname format example: '*v1000.201501-210012.nc')
+    f0 = nc_files[0]
+    start_yr = f0.split(var_map[variable][1])[1][1:5]
+    end_yr = f0.split(var_map[variable][1])[1][8:12]
+    n_yrs = int(end_yr) - int(start_yr) + 2 # +2 to account for inclusive range and resampling to year end
+    ensemble_tseries = np.zeros((len(nc_files), n_yrs))  # 87 years from 2015 to 2100 in CESM2 sims. will need to change for CESM1 MENS which stops in 2080
+    ensemble_trends = np.zeros(len(nc_files))
+    ensemble_pvalues = np.zeros(len(nc_files))
 
-    return members, ens_mean
+    for i, fname in enumerate(nc_files):
+        print(i)
+        ds = xr.open_dataset(os.path.join(sim_dir, fname))
+        var_data = ds[var_map[variable][1]]
+        
+        # Clip to region
+        lon1, lon2, lat1, lat2 = region_bounds
+        if ds.lon.max() > 180:
+            lon1 = (lon1 + 360) % 360
+            lon2 = (lon2 + 360) % 360
+        data_region = var_data.sel(lon=slice(lon1, lon2), lat=slice(lat1, lat2))
+        
+        # Average spatially over region for this member
+        member_avg = data_region.mean(dim=["lat", "lon"], skipna=True)
 
-#%%
-# Get proxy reconstruction northward wind trends
-def get_proxy_trends(recon, region_bounds):
+        # Calculate annual mean
+        member_avg = member_avg.resample(time='YE').mean()
+
+
+        # Calculate trend in per century
+        trend = stats.linregress(member_avg['time'].dt.year[0:-1], member_avg.values[0:-1]) #exclude last yr bc unusually large..LOOK INTO
+        trend_per_cent = trend.slope * 100  # Convert to m/s per century
+        trend_pval = trend.pvalue
+
+        # Store in arrays
+        ensemble_tseries[i, :] = member_avg
+        ensemble_trends[i] = trend_per_cent
+        ensemble_pvalues[i] = trend_pval
+        ds.close()
+
+    print(f"Ensemble mean trend: {np.mean(ensemble_trends):.2f} m/s per century, "
+        f"std dev = {np.std(ensemble_trends, ddof=1):.2f} m/s per century")
+
+    return ensemble_tseries, ensemble_trends, ensemble_pvalues
+
+
+
+#%% Define func to load proxy recon trends-----------------------------------------------------
+
+def get_proxy_trends(recon, variable, region_bounds, time_per):
     """Load proxy northward wind trends."""
 
-    recon_dict = {'cesm1_lme': 'iCESM_LME_GKO1_linPSM_1mc_1800_2005_v10_',
-                  'cesm1_lens': 'LENS_super_GKO1_all_linPSM_1mc_1800_2005_GISBrom_1880_2019_',
-                  'cesm1_pace': 'PACE_super_GKO1_all_linPSM_1mc_1900_2005_GISBrom_1880_2019_v10_sst_',
-                  'cesm2_lens': 'LENS2_super_GKO1_all_bilinPSM_1mc_1850_2005_GISBrom_',
-                  'cesm2_pace': 'PAC_PACE2_super_GKO1_all_bilinPSM_1mc_1850_2005_GISBrom_'}
-    proxy_dir = "../../../Research/LMR_analysis/LMR_output/"
-    proxy_file = proxy_dir + recon_dict[recon] +  "v10.nc"
+    recon_dict = {'cesm2_lens': 'CESM2_LENS_recon_1850_2005/LENS2_super_GKO1_all_bilinPSM_1mc_1850_2005_GISBrom_',
+                  'cesm2_pace': 'CESM2_PAC_PACE_recon_1850_2005/PAC_PACE2_super_GKO1_all_bilinPSM_1mc_1850_2005_GISBrom_'}
+    proxy_dir = base_dir + "Proxy_reconstructions/"
+    proxy_file = proxy_dir + recon_dict[recon] +  variable + ".nc"
 
     ds_proxy = xr.open_dataset(proxy_file)
     ds_proxy = ds_proxy.squeeze()
     lon1, lon2, lat1, lat2 = region_bounds
-    ds_proxy_reg = ds_proxy.sel(time=slice(1920,2005),lat=slice(lat1,lat2), 
+    start,stop = time_per
+    ds_proxy_reg = ds_proxy.sel(time=slice(start,stop),lat=slice(lat1,lat2), 
                             lon=slice((lon1 + 360) % 360, (lon2 + 360) % 360))
     # Assuming the dataset has a variable named 'northward_wind_trend'
-    ds_proxy_reg_avg = ds_proxy_reg['v10'].mean(dim=['lat', 'lon'], skipna=True)
-    proxy_trend = stats.linregress(ds_proxy_reg_avg['time'], ds_proxy_reg_avg.values)
+    proxy_reg_avg = ds_proxy_reg[variable].mean(dim=['lat', 'lon'], skipna=True)
+    proxy_trend = stats.linregress(proxy_reg_avg['time'], proxy_reg_avg.values)
 
     trend_per_cent = proxy_trend.slope * 100  # Convert to m/s per century
     trend_pval = proxy_trend.pvalue
 
-    return trend_per_cent, trend_pval
+    return proxy_reg_avg, trend_per_cent, trend_pval
+
+#%% Load sim data-----------------------------------------------------
+
+sims = ['CESM2_SSP370', 'CESM2_SSP245', 'CESM2_SSP585']
+sim_tseries_dict = {}
+sim_trends_dict = {}
+sim_pvals_dict = {}
+for sim in sims:
+    tseries, trends, pvals = load_sim_ensemble(sim, vname, regions[region])
+    sim_tseries_dict[sim] = tseries
+    sim_trends_dict[sim] = trends
+    sim_pvals_dict[sim] = pvals
 
 
-#%% Load data
+#%% Load proxy trends -----------------------------------------------------
 
-# ---- USER INPUT ----
-variable = input(f"Select variable {list(var_map.keys())}: ").strip()
-# variable = "v"
-# region_name = input(f"Select region {list(regions.keys())}: ").strip()
-region_name = "Amundsen_Sea" #for on-shelf
-# region_name = 'ASE_shelf_break'  
-region_bounds = regions[region_name]
-bias_correction = input("Apply bias correction? (y/n): ").strip().lower() == 'y'
-# --------------------
+# (note this populates an array, which will be turned into a single proxy recon list for plotting)
 
-# Load simulated data
-scenarios = ['Historical', 'RCP4.5']#'Paris1.5C', 'Paris2C', 'RCP4.5', 'RCP8.5']
-sim_data = {}
-for scenario in scenarios:
-    scenario_path = os.path.join(base_dir, scenario)
-    print(scenario)
-    members, ens_mean = load_model_ens(scenario_path, variable, region_bounds)
-    sim_data[scenario] = members*100 # convert to m/s/cent
-
-# Load proxy data
-proxy_trends = {}
-recons = ['cesm1_lme', 'cesm1_lens', 'cesm2_lens', 'cesm2_pace'] #'cesm1_pace', 
-for recon in recons:
-    proxy_trend, pval = get_proxy_trends(recon, region_bounds)
-    proxy_trends[recon] = proxy_trend
-    print(f"{recon} proxy trend: {proxy_trend:.2f} m/s per century, p-value: {pval:.3f}")
-
-# propogate data for easy plotting: proxy_data then simulated data
-proxy_values = list(proxy_trends.values())
-sim_values = [list(sim_data[scen].values) for scen in sim_data]
-plot_data = [proxy_values] + sim_values
-
-# calculate means and standard errors for each group
-means = [] # order is proxy, historical, paris1.5, paris2, rcp4.5, rcp8.5
-std_errs = []
-for i, values in enumerate(plot_data, 0):
-    mean = np.mean(values)
-    se = np.std(values, ddof=1) / np.sqrt(len(values))
-    means.append(mean)
-    std_errs.append(se)
-
-# calculate bias and uncertainty from historical sim and proxy
-bias = means[1]- means[0]  # model historical - proxy mean
-print(f"Bias (Hist model - Proxies) = {bias:.2f}")
-
+recons = ['cesm2_lens','cesm2_pace']
+time_per = [1900,2005]
+recon_tseries_list = [] #list of 1d data arrays with time and var data
+recon_trends_arr = np.zeros(len(recons))
+recon_pvals_arr = np.zeros(len(recons))
+for i in range(len(recons)):
+    tseries, trend, pval = get_proxy_trends(recons[i], vname, regions[region], time_per)
+    recon_tseries_list.append(tseries)
+    recon_trends_arr[i] = trend
+    recon_pvals_arr[i] = pval
 
 #%% ---- PLOT ----
 
+# Specify the order of simulations for plotting
+sim_order = ['CESM2_SSP245', 'CESM2_SSP370', 'CESM2_SSP585']
+
+plot_data = [recon_trends_arr] + [sim_trends_dict[sim] for sim in sim_order]
+
 # choose colors
 reds = plt.cm.YlOrRd(np.linspace(0.4, 0.9, 4))
-colors = ['tab:blue','darkgray',reds[2]]#],reds[1],reds[2],reds[3]]
+colors = ['darkgray',reds[1],reds[2],reds[3]]
 
 # set up plot
 fig, ax = plt.subplots(figsize=(8, 6))
 
-x_positions = np.arange(len(scenarios) + 1)
+x_positions = np.arange(len(plot_data))
 ax.set_xticks(x_positions)
-x_labels = ['Proxies'] + scenarios
+x_labels = ['Proxy recons\n1900-2005'] + sim_order
 ax.set_xticklabels(x_labels)
 
 parts = ax.violinplot(plot_data, positions=x_positions, widths=0.5, showmeans=False, showmedians=False,
@@ -144,36 +182,6 @@ for pc, color in zip(parts['bodies'], colors):
     pc.set_edgecolor('black')
     pc.set_alpha(0.7)
     pc.set_linewidth(1.5)
-
-# plot mean + standard error
-for i, values in enumerate(plot_data, 0):
-    mean, se = means[i], std_errs[i]
-
-    # Plot mean as a black dot
-    ax.scatter(i, mean, color="k", zorder=3)
-    # Plot error bar for standard error
-    ax.errorbar(i, mean, yerr=se, color="k", capsize=5, linewidth=1.5, zorder=2)
-
-    # Print them out
-    print(f"{x_labels[i]}: mean = {mean:.2f}, SE = {se:.2f}")
-    # Add text annotation above violin
-    ax.text(i, max(values) + 0.01, f"{mean:.2f} ± {se:.2f}",
-        ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    if bias_correction and i > 1:
-
-        corrected_trend = mean - bias
-        sim_hist_se = std_errs[1]  # standard error of historical sim
-        proxy_hist_se = std_errs[0]  # standard error of historical proxy
-        # propagate uncertainties in quadrature: sqrt(se_future^2 + se_sim_hist^2 + se_proxy_hist^2)
-        corrected_se = np.sqrt(se**2 + sim_hist_se**2 + proxy_hist_se**2)
-
-        # plot bias-corrected mean + propagated uncertainty
-        ax.scatter(i, corrected_trend, color="c", zorder=3)
-        ax.errorbar(i, corrected_trend, yerr=corrected_se, color="c", capsize=5, linewidth=2, zorder=2)
-        # Add text annotation below corrected error bar
-        ax.text(i, corrected_trend - corrected_se - 0.01, f"{corrected_trend:.2f} ± {corrected_se:.2f}",
-            ha='center', va='top', fontsize=10, color='k', fontweight='bold')
         
 
 # Set style of violin plots
@@ -188,21 +196,71 @@ for partname in ('cbars', 'cmins', 'cmaxes', 'cmeans', 'cmedians'):
             vp.set_color("black")
             vp.set_linewidth(2)
 
+# annotate the number of ensemble members/proxy reconstructions
+for i, data in enumerate(plot_data):
+    n = len(data)
+    ax.text(x_positions[i], np.mean(data),
+            f'n={n}', ha='center', va='center', fontsize=12)
+
 # Adjust plot aesthetics
-plt.axhline(0, color='k', linestyle='--', linewidth=2,zorder=2)
-plt.axvline(1.5, color='gray', linestyle='--', linewidth=1)
+plt.axhline(0, color='k', linestyle='--', linewidth=2,zorder=0)
+plt.axvline(0.5, color='gray', linestyle='--', linewidth=2,zorder=0)
 plt.grid(True, axis='y')
 
-ylim_dict = {'v': [-0.7, 0.6], 'u': [-1,1], 'temp': [-2,2]}
-plt.ylim(ylim_dict[variable])
-plt.ylabel(f"{var_map[variable].replace('_', ' ').title()} Trend (m/s per century)")
-plt.title(f"Ensemble Trends for {region_name} - {var_map[variable].replace('_', ' ').title()}")
+plt.title(f'{vname} trends over {region.replace("_", " ")} (2015-2100)')
+plt.ylabel(vname + " trend (m/s per century)")
 plt.rcParams.update({'font.size': 14,
                         'axes.titlesize': 14,
                         'axes.labelsize': 14})
 plt.tight_layout()
 
 plt.show()
+
+
+#%% Plot time series -----------------------------------------------------
+
+fig = plt.figure(figsize=(10, 6))
+ax = fig.add_subplot(1, 1, 1)
+
+# plot proxy recons
+ax.plot(recon_tseries_list[0]['time'], recon_tseries_list[0], label='CESM2 LENS Proxy Recon', color='darkgray')
+ax.plot(recon_tseries_list[1]['time'], recon_tseries_list[1], label='CESM2 PACE Proxy Recon', color='black')
+
+# Plot sim ensemble means
+for sim, color in zip(sim_order, reds[1:]):
+
+    sim_mean = np.mean(sim_tseries_dict[sim], axis=0)
+    years = np.arange(2015, 2015 + sim_mean.shape[0])
+
+    #offset timeseries so that the first year matches the proxy recon end year (2005)
+    recon_mean_2005 = np.mean([recon_tseries_list[0].sel(time=2005).values,
+                                        recon_tseries_list[1].sel(time=2005).values])
+    offset = recon_mean_2005 - sim_mean[0]
+    sim_mean += offset
+    ax.plot(years[:-1], sim_mean[:-1], label=f'{sim} Ensemble Mean', color=color)
+
+    # plot 95% conf interal shading
+    sim_lower = np.percentile(sim_tseries_dict[sim], 2.5, axis=0) + offset
+    sim_upper = np.percentile(sim_tseries_dict[sim], 97.5, axis=0) + offset
+    ax.fill_between(years[:-1], sim_lower[:-1], sim_upper[:-1], color=color, alpha=0.3,
+                    label=f'{sim} 95% CI')
+
+    # print trend, p-val, and std dev of timeseries
+    print(f"{sim} trend: {np.mean(sim_trends_dict[sim]):.2f} m/s/cent, p-val: {np.mean(sim_pvals_dict[sim]):.3f}")
+
+# Adjust plot aesthetics
+plt.grid(True, axis='y')
+plt.xlabel('Year')
+plt.ylabel(vname + " (m/s)")
+plt.title(f'{vname} over {region.replace("_", " ")}')
+plt.legend(loc='lower left',ncol=2)
+plt.rcParams.update({'font.size': 14,
+                        'axes.titlesize': 14,
+                        'axes.labelsize': 14,
+                        'legend.fontsize': 10})
+plt.tight_layout()
+plt.show()
+
 
 
 # %%
