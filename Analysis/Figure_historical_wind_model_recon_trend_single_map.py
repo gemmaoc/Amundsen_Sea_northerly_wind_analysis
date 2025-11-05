@@ -1,4 +1,9 @@
 #%%
+
+# Plot one trend map of quivers and color contours for either historical or future data
+#  (either proxy recons of ensemble mean of simulations)
+
+#%%
 import numpy as np
 import xarray as xr
 from scipy.stats import linregress
@@ -11,35 +16,68 @@ from shapely.geometry import Polygon
 from matplotlib.path import Path
 
 #%% User parameters
-cutoff_lat = -50
-# plot_data = 'pace2_recon' #CESM1_PAC_PACE, pace2_recon
-plot_data = 'CESM1_PAC_PACE'
+
+# map northern lat extent
+cutoff_lat = -40
+
+# historical params
+plot_data = 'CESM1_LME_recon' 
+# plot_data = 'CESM1_PAC_PACE'
+# plot_data = 'CESM1_LENS_historical'
 time_per = [1920,2005]  # period for trend calculation
+
+# future params
+# plot_data = 'CESM2_SSP585'
+# plot_data = 'CESM2_SSP370'
+# plot_data = 'CESM2_SSP245'
+# time_per = [2015,2100]
 
 #%% Get data
 
 data_dir = "/Users/gemma/Documents/Data/"
 # File paths
-file_dict = {
-    'CESM1_PAC_PACE': {
-        'psl': data_dir + "Model/Atmos/CESM1_PAC_PACE/annual_psl_PAC_PACE_ens_mean_1920_2005.nc",
-        'u10': data_dir + "Model/Atmos/CESM1_PAC_PACE/annual_u10_PAC_PACE_ens_mean_1920_2005.nc",
-        'v10': data_dir + "Model/Atmos/CESM1_PAC_PACE/annual_v10_PAC_PACE_ens_mean_1920_2005.nc"
-    },
-    'pace2_recon': {
-        'psl': data_dir + "Proxy_reconstructions/PAC_PACE2_super_GKO1_all_bilinPSM_1mc_1800_2005_GISBrom_mitgcm_vars_psl.nc",
-        'u10': data_dir + "Proxy_reconstructions/PAC_PACE2_super_GKO1_all_bilinPSM_1mc_1800_2005_GISBrom_mitgcm_vars_u10.nc",
-        'v10': data_dir + "Proxy_reconstructions/PAC_PACE2_super_GKO1_all_bilinPSM_1mc_1800_2005_GISBrom_mitgcm_vars_v10.nc"
+def get_data(data_source, variable, time_period):
+
+    """Load dataset for given data type and variable."""
+
+    base_paths = {
+        # Simulations
+        'CESM1_PAC_PACE': data_dir + "Model/Atmos/CESM1_PAC_PACE/" +
+                         "annual_{}_PAC_PACE_ens_mean_1920_2005.nc",
+        'CESM1_LENS_historical': data_dir + "Model/Atmos/CESM1_LENS_historical/" +
+                                "annual_{}_LENS_ens_mean_1920_2005.nc",
+        'CESM2_SSP585': data_dir + "Model/Atmos/CESM2_SSP585/" +
+                       "b.e21.BSSP585smbb.f09_g17.ens_mean.{}.2015-2100.nc",
+        'CESM2_SSP370': data_dir + "Model/Atmos/CESM2_SSP370/" +
+                       "b.e21.BSSP370cmip6smbb.f09_g17.ens_mean.{}.2015-2100.nc", 
+        'CESM2_SSP245': data_dir + "Model/Atmos/CESM2_SSP245/" +
+                       "b.e21.BSSP245smbb.f09_g17.ens_mean.{}.2015-2100.nc",
+        
+        # Proxy recons   
+        'CESM1_LME_recon': data_dir + "Proxy_reconstructions/iCESM1_LME_recon_1800_2005/" +
+                          "iCESM1_LME_recon_1800_2005_{}.nc",
+        'CESM1_PAC_PACE_recon': data_dir + "Proxy_reconstructions/CESM1_PAC_PACE_recon_1800_2005/" +
+                               "CESM1_PAC_PACE_recon_1800_2005_{}.nc",
+        'CESM1_LENS_recon': data_dir + "Proxy_reconstructions/CESM1_LENS_recon_1800_2005/" +
+                           "CESM1_LENS_recon_1800_2005_{}.nc",
+        'CESM2_PAC_PACE_recon': data_dir + "Proxy_reconstructions/CESM2_PAC_PACE_recon_1800_2005/" +
+                               "CESM2_PAC_PACE_recon_1800_2005_{}.nc",
+        'CESM2_LENS_recon': data_dir + "Proxy_reconstructions/CESM2_LENS_recon_1800_2005/" +
+                           "CESM2_LENS_recon_1800_2005_{}.nc",
     }
-}
-psl_path = file_dict[plot_data]['psl']
-u10_path = file_dict[plot_data]['u10']
-v10_path = file_dict[plot_data]['v10']
+    
+    if 'CESM2' in data_source and 'recon' not in data_source:
+        cesm2_var_dict = { 'psl': 'PSL', 'tas': 'TS', 'u10': 'u1000', 'v10': 'v1000' }
+        variable = cesm2_var_dict[variable]
+    file_path = base_paths[data_source].format(variable)
+    data = xr.open_dataset(file_path)[variable].sel(time=slice(time_period[0], time_period[1])).squeeze()
+
+    return data
 
 # Load data
-psl = xr.open_dataset(psl_path)['psl'].sel(time=slice(time_per[0],time_per[1])).squeeze()  # shape: (time, lat, lon)
-u10 = xr.open_dataset(u10_path)['u10'].sel(time=slice(time_per[0],time_per[1])).squeeze()
-v10 = xr.open_dataset(v10_path)['v10'].sel(time=slice(time_per[0],time_per[1])).squeeze()
+psl = get_data(plot_data, 'psl', time_per)
+u10 = get_data(plot_data, 'u10', time_per)
+v10 = get_data(plot_data, 'v10', time_per)
 
 # Convert SLP to hPa 
 psl = psl / 100
@@ -72,7 +110,7 @@ psl_trend_antarctic = psl_trend.sel(lat=lat_mask)
 u10_trend_antarctic = u10_trend.sel(lat=lat_mask)
 v10_trend_antarctic = v10_trend.sel(lat=lat_mask)
 
-#%% Make map
+#%% Make map ------------------------------------------------------
 
 # Set up figure
 fig = plt.figure(figsize=(5, 6))
@@ -90,7 +128,7 @@ lon2d, lat2d = np.meshgrid(cyclic_lons, psl_trend_antarctic['lat'])
 c = ax.contourf(
     lon2d, lat2d, psl_trend_antarctic_cyclic,
     transform=ccrs.PlateCarree(), 
-    cmap='BrBG_r', levels=np.arange(-3, 3.5, 0.5), extend='both')
+    cmap='BrBG_r', levels=np.arange(-4, 4.5, 0.5), extend='both')
 # set colorbar
 cb = plt.colorbar(c, ax=ax, orientation='horizontal', pad=0.05, shrink=0.8, aspect=20)
 cb.ax.tick_params(labelsize=12)
@@ -100,7 +138,7 @@ cb.set_label('SLP Trend (hPa/century)', fontsize=12)
 # lat_density, lon_density, scale. larger density # means fewer arrows. larger quiver scale means
 skip_dict = {'CESM1_PAC_PACE': (4, 12, 10), 
              'pace2_recon': (4, 12, 10)}
-quiver_lat_density, quiver_lon_density, quiver_scale = skip_dict[plot_data]   # more arrows in latitude # larger number means fewer arrows #4 for pace em
+quiver_lat_density, quiver_lon_density, quiver_scale = (4,12,16)   # more arrows in latitude # larger number means fewer arrows #4 for pace em
 # quiver_lon_density = 8  # fewer arrows in longitude #12 for pace em
 # quiver_scale = 12 #larger number means smaller arrows #8 for pace em
 skip = (slice(None, None, quiver_lat_density), slice(None, None, quiver_lon_density))
@@ -134,8 +172,23 @@ ax.add_feature(cfeature.COASTLINE, linewidth=1, zorder=4)
 # optional: draw a visible outline at 50S (will coincide with the boundary)
 ax.plot(lons_bound, lats_bound, transform=ccrs.PlateCarree(), linewidth=3, color='k', zorder=10)
 
+# Plot box over Amundsen Sea Embayment in magenta
+ase_box_lons = [-115, -100, -100, -115, -115]
+ase_box_lats = [-76, -76, -70, -70, -76]
+ax.plot(ase_box_lons, ase_box_lats, transform=ccrs.PlateCarree(), color='magenta', linewidth=2, zorder=5)
 
-plt.title(plot_data + ' trends (1920-2005)',fontsize=16)
+
+# CESM1 LENS historical n=40, CESM1 PAC PACE n=20
+ens_num_dict = {
+    'CESM1_PAC_PACE': 20,
+    'CESM1_LENS_historical': 40,
+    'CESM2_SSP585': 15,
+    'CESM2_SSP370': 100,
+    'CESM2_SSP245': 16}
+if plot_data in ens_num_dict:
+    plt.title(f"{plot_data} EM trends ({time_per[0]}-{time_per[1]}), n={ens_num_dict[plot_data]}",fontsize=16)
+else:
+    plt.title(f"{plot_data} trends ({time_per[0]}-{time_per[1]})",fontsize=16)
 plt.tight_layout()
 plt.show()
 # %%
