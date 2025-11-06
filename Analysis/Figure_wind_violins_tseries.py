@@ -8,7 +8,7 @@ import numpy as np
 
 #%% USER SETTINGS------------------------------------------------------
 
-vname = 'vs'  # variable name: 'vs' for northward wind, 'us' for eastward wind, 'tas' for temperature
+vname = 'us'  # variable name: 'vs' for northward wind, 'us' for eastward wind, 'tas' for temperature
 region = 'Amundsen_Sea_shelf'
 
 
@@ -67,7 +67,7 @@ def load_sim_ensemble(sim, variable, region_bounds):
     ensemble_pvalues = np.zeros(len(nc_files))
 
     for i, fname in enumerate(nc_files):
-        print(i)
+
         ds = xr.open_dataset(os.path.join(sim_dir, fname))
         var_data = ds[var_map[variable][1]]
         
@@ -223,8 +223,10 @@ fig = plt.figure(figsize=(10, 6))
 ax = fig.add_subplot(1, 1, 1)
 
 # plot proxy recons
-ax.plot(recon_tseries_list[0]['time'], recon_tseries_list[0], label='CESM2 LENS Proxy Recon', color='darkgray')
-ax.plot(recon_tseries_list[1]['time'], recon_tseries_list[1], label='CESM2 PACE Proxy Recon', color='black')
+ax.plot(recon_tseries_list[0]['time'], recon_tseries_list[0], color='darkgray',
+        label=f'CESM2 LENS Proxy Recon\n{np.mean(recon_trends_arr[0]):.2f} m/s/cent, p = {np.mean(recon_pvals_arr[0]):.3f}')
+ax.plot(recon_tseries_list[1]['time'], recon_tseries_list[1], color='black',
+        label=f'CESM2 PACE Proxy Recon\n{np.mean(recon_trends_arr[1]):.2f} m/s/cent, p = {np.mean(recon_pvals_arr[1]):.3f}')
 
 # Plot sim ensemble means
 for sim, color in zip(sim_order, reds[1:]):
@@ -237,13 +239,14 @@ for sim, color in zip(sim_order, reds[1:]):
                                         recon_tseries_list[1].sel(time=2005).values])
     offset = recon_mean_2005 - sim_mean[0]
     sim_mean += offset
-    ax.plot(years[:-1], sim_mean[:-1], label=f'{sim} Ensemble Mean', color=color)
+    lab = f"{sim} Ensemble Mean\n{np.mean(sim_trends_dict[sim]):.2f} m/s/cent, p = {np.mean(sim_pvals_dict[sim]):.3f}"
+    ax.plot(years[:-1], sim_mean[:-1], label=lab, color=color)
 
-    # plot 95% conf interal shading
-    sim_lower = np.percentile(sim_tseries_dict[sim], 2.5, axis=0) + offset
-    sim_upper = np.percentile(sim_tseries_dict[sim], 97.5, axis=0) + offset
-    ax.fill_between(years[:-1], sim_lower[:-1], sim_upper[:-1], color=color, alpha=0.3,
-                    label=f'{sim} 95% CI')
+    # # plot interquartile range shading
+    sim_lower = np.percentile(sim_tseries_dict[sim], 25, axis=0) + offset
+    sim_upper = np.percentile(sim_tseries_dict[sim], 75, axis=0) + offset
+    ax.fill_between(years[:-1], sim_lower[:-1], sim_upper[:-1], color=color, alpha=0.3)#,
+                    # label=f'{sim} Interquartile Range')
 
     # print trend, p-val, and std dev of timeseries
     print(f"{sim} trend: {np.mean(sim_trends_dict[sim]):.2f} m/s/cent, p-val: {np.mean(sim_pvals_dict[sim]):.3f}")
@@ -251,7 +254,7 @@ for sim, color in zip(sim_order, reds[1:]):
 # Adjust plot aesthetics
 plt.grid(True, axis='y')
 plt.xlabel('Year')
-plt.ylabel(vname + " (m/s)")
+plt.ylabel(vname + " anomaly (m/s)")
 plt.title(f'{vname} over {region.replace("_", " ")}')
 plt.legend(loc='lower left',ncol=2)
 plt.rcParams.update({'font.size': 14,
