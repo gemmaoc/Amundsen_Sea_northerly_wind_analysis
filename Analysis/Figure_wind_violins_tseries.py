@@ -8,7 +8,7 @@ import numpy as np
 
 #%% USER SETTINGS------------------------------------------------------
 
-vname = 'us'  # variable name: 'vs' for northward wind, 'us' for eastward wind, 'tas' for temperature
+vname = 'vs'  # variable name: 'vs' for northward wind, 'us' for eastward wind, 'tas' for temperature
 region = 'Amundsen_Sea_shelf'
 
 
@@ -57,12 +57,12 @@ def load_sim_ensemble(sim, variable, region_bounds):
 
     # Load all files and collect variable data
 
-    # get number of years from first file name (fname format example: '*v1000.201501-210012.nc')
+    # get number of years from first file name (fname format example: '*v1000.2015-2100.nc')
     f0 = nc_files[0]
     start_yr = f0.split(var_map[variable][1])[1][1:5]
-    end_yr = f0.split(var_map[variable][1])[1][8:12]
-    n_yrs = int(end_yr) - int(start_yr) + 2 # +2 to account for inclusive range and resampling to year end
-    ensemble_tseries = np.zeros((len(nc_files), n_yrs))  # 87 years from 2015 to 2100 in CESM2 sims. will need to change for CESM1 MENS which stops in 2080
+    end_yr = f0.split(var_map[variable][1])[1][6:10] 
+    n_yrs = int(end_yr) - int(start_yr) + 1
+    ensemble_tseries = np.zeros((len(nc_files), n_yrs)) 
     ensemble_trends = np.zeros(len(nc_files))
     ensemble_pvalues = np.zeros(len(nc_files))
 
@@ -81,12 +81,9 @@ def load_sim_ensemble(sim, variable, region_bounds):
         # Average spatially over region for this member
         member_avg = data_region.mean(dim=["lat", "lon"], skipna=True)
 
-        # Calculate annual mean
-        member_avg = member_avg.resample(time='YE').mean()
-
 
         # Calculate trend in per century
-        trend = stats.linregress(member_avg['time'].dt.year[0:-1], member_avg.values[0:-1]) #exclude last yr bc unusually large..LOOK INTO
+        trend = stats.linregress(member_avg['time'], member_avg.values)
         trend_per_cent = trend.slope * 100  # Convert to m/s per century
         trend_pval = trend.pvalue
 
