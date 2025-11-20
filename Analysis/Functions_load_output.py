@@ -51,9 +51,9 @@ def load_experiment_ds(exp_name, iters, prefix):
         
 
     """
-    casper_dir = '/glade/campaign/univ/ulnl0002/Gemma/AS_climBC_5yr_exp/'
+    casper_dir = '/glade/campaign/univ/uwas0134/Gemma/AS_climBC_5yr_exp/'
     run_path = casper_dir + exp_name + '/diags/'
-    grid_dir = '/Users/gemma/Documents/Data/Model/Ocean/OConnor_2025/Input/'
+    grid_dir = '/glade/campaign/univ/uwas0134/Gemma/OConnor_2025_NatGeo/AS_climBC_5yr_exp/grid_files/'
     
     # Load output as xarray data array (package has issue loading grid)
     # Uses dask so faster than doing this step yourself and creating an xr dataset
@@ -225,8 +225,8 @@ def get_bathymetry_and_troughs():
         Also contains the coordinates lat and lon, retrieved from XC and YC grid.
 
     """
-    
-    grid_dir = '/Users/gemma/Documents/Data/Model/Ocean/OConnor_2025/Input/'
+
+    grid_dir = '/glade/campaign/univ/uwas0134/Gemma/OConnor_2025_NatGeo/AS_climBC_5yr_exp/grid_files/'
     #get bathymetry to plot as contours
     b_fname = grid_dir + '1080_BATHY_2_rignot.bin'
     f_b = open(b_fname)

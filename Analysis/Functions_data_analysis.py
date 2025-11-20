@@ -29,7 +29,8 @@ plot_regions = {'AS_far':[-68,-76.5,-135,-90],\
                 'ASBS':[-68,-76.5,-130,-75],\
                 'PIB':[-74.5,-76,-105,-98],\
                 'Inner Shelf':[-74,-76,-110,-98],\
-                'full_model_domain':[-65.5,-76.5,-140,-65.1]}
+                'full_model_domain':[-65.5,-76.5,-140,-65.1],
+                'naughten_model_domain':[-62,-76,-140,-80]}
 
 
 # For map region analyses, e.g. shelf-break undercurrent strength, total-shelf means, heat budget. 

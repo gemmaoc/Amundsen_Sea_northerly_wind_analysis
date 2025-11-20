@@ -11,13 +11,18 @@ from shapely.geometry import Polygon
 from matplotlib.path import Path
 from scipy import stats
 import matplotlib.path as mpath
+import importlib
 import Functions_data_analysis as fda
 import Functions_load_output as flo
 
+# Reload the module if it has been modified
+importlib.reload(fda)
+
 #%% User parameters--------------------------------------------------------------
-data_dir = '/Users/gemma/Documents/Data/Model/Ocean/Naughten_2022/'
-region = 'AS_near'
-region = 'full_model_domain'
+data_dir = '/glade/campaign/univ/uwas0134/Gemma/Data/Model/Naughten_2022/'
+# region = 'AS_near'
+# region = 'full_model_domain'
+region = 'naughten_model_domain'
 
 #%% Load Naughten 2022 data-------------------------------------------------------------
 
@@ -64,7 +69,7 @@ plt.figure(figsize=(12,6))
 for i in range(n_ens):
     ens_ds = xr.open_dataset(data_dir + fname + ens_list[i] + '.nc')
     ens_temp = ens_ds.sea_water_potential_temperature
-    ens_temp_ann = ens_temp.resample(time='1Y').mean()
+    ens_temp_ann = ens_temp.resample(time='YE').mean()
     plt.plot(years,ens_temp_ann,label=ens_list[i])
     # calc trend
     slope, intercept, r_value, p_value, std_err = stats.linregress(years, ens_temp_ann)
@@ -82,7 +87,7 @@ print('Ensemble mean trend:', np.mean(cent_CDW_trends))
 
 #%% Make subplots of all ensemble member T, uwind, and vwind trends-------------------------------------------------
 fig, axes = plt.subplots(4, 5, figsize=(15, 11),
-                         subplot_kw={'projection': ccrs.SouthPolarStereo(central_longitude=-105)})
+                         subplot_kw={'projection': ccrs.SouthPolarStereo(central_longitude=-109)})
 axes = axes.flatten()  
 
 lat1, lat2, lon1, lon2 = fda.plot_regions[region]      
@@ -110,7 +115,7 @@ for i in range(n_ens):
     # 600 lons, 384 lats, shape of data = (384 lats, 600 lons)
     if region == 'AS_near':
         lat_skip, lon_skip, scale = 10, 20, 4
-    elif region == 'full_model_domain':
+    elif region == 'full_model_domain' or region == 'naughten_model_domain':
         lat_skip, lon_skip, scale = 40, 80, 10
     Q = ax.quiver(
         naught_lons[::lon_skip], naught_lats[::lat_skip],
@@ -147,4 +152,5 @@ plt.suptitle('Naughten et al., 2022 ensemble trends (1920-2013)', fontsize=16)
 
 plt.show()
 
-#%% Make single plot of one ensemble member T, uwind, and vwind trends-------------------------------------------------
+
+# %%
